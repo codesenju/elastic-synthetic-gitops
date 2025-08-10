@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastic-synthetic-prod
+  labels:
+    name: elastic-synthetic-prod
+    environment: production
+    monitoring: synthetic
+    tier: prod
+  annotations:
+    environment: production
+    contact: devops-team@company.com

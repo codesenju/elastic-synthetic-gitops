@@ -1,0 +1,70 @@
+outputs:
+  default:
+    type: elasticsearch
+    hosts:
+      - "${ELASTICSEARCH_URL}"
+    username: "${ELASTICSEARCH_USERNAME}"
+    password: "${ELASTICSEARCH_PASSWORD}"
+    ssl:
+      verification_mode: certificate
+      certificate_authorities: ["/etc/ssl/certs/ca-certificates.crt"]
+
+inputs:
+  - type: synthetics/http
+    id: http-monitors-prod
+    use_output: default
+    streams:
+      - data_stream:
+          dataset: http
+          type: synthetics
+        schedule: "@every 30s"  # More frequent in production
+        timeout: 10s
+        
+  - type: synthetics/tcp
+    id: tcp-monitors-prod
+    use_output: default
+    streams:
+      - data_stream:
+          dataset: tcp
+          type: synthetics
+        schedule: "@every 30s"
+        timeout: 10s
+        
+  - type: synthetics/icmp
+    id: icmp-monitors-prod
+    use_output: default
+    streams:
+      - data_stream:
+          dataset: icmp
+          type: synthetics
+        schedule: "@every 30s"
+        timeout: 5s
+
+logging:
+  level: warn  # Less verbose logging in production
+  to_files: true
+  files:
+    path: /var/log/elastic-agent
+    name: elastic-agent
+    keepfiles: 14
+    permissions: 0644
+    rotateeverybytes: 100MB
+
+monitoring:
+  enabled: true
+  logs: true
+  metrics: true
+  http:
+    enabled: true
+    host: 0.0.0.0
+    port: 6791
+
+fleet:
+  enabled: false
+
+agent:
+  monitoring:
+    enabled: true
+    use_output: default
+    logs: true
+    metrics: true

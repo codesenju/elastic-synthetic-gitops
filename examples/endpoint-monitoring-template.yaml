@@ -1,0 +1,214 @@
+# Endpoint Monitoring Template
+# Copy this template and customize for your service
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: YOUR_SERVICE_NAME-monitors  # Replace with your service name
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app: synthetic-monitor
+    type: http  # or tcp, icmp
+    service: YOUR_SERVICE_NAME  # Replace with your service name
+    team: YOUR_TEAM_NAME  # Replace with your team name
+    environment: production  # or staging, development
+data:
+  monitors.yaml: |
+    monitors:
+      # HTTP Health Check Monitor
+      - name: "YOUR_SERVICE_NAME Health Check"  # Replace with descriptive name
+        type: http
+        url: "https://api.yourservice.com/health"  # Replace with your endpoint
+        method: GET  # GET, POST, PUT, DELETE, etc.
+        schedule:
+          number: "5"  # Check every 5 minutes
+          unit: "m"    # m=minutes, s=seconds, h=hours
+        timeout: "10s"
+        enabled: true
+        tags:
+          - "YOUR_SERVICE_NAME"  # Replace with your service name
+          - "health-check"
+          - "critical"  # critical, important, or monitoring
+        private_locations:
+          - "synthetic-monitor-default"
+        
+        # Expected response validation
+        expected_status: [200]  # Expected HTTP status codes
+        expected_headers:
+          content-type: "application/json"  # Optional: validate headers
+        expected_body_positive:  # Optional: text that should be present
+          - "healthy"
+          - "ok"
+          - "status"
+        expected_body_negative:  # Optional: text that should NOT be present
+          - "error"
+          - "failed"
+        
+        # Authentication (if required)
+        headers:  # Optional: custom headers
+          Authorization: "Bearer ${API_TOKEN}"  # Use env vars for secrets
+          X-API-Key: "${API_KEY}"
+          Content-Type: "application/json"
+        
+        # Request body (for POST/PUT requests)
+        body: |  # Optional: request body
+          {
+            "check": "health"
+          }
+        
+        # Alert configuration
+        alert:
+          status:
+            enabled: true
+          tls:
+            enabled: true  # Enable TLS certificate monitoring
+
+      # API Endpoint Monitor
+      - name: "YOUR_SERVICE_NAME API Endpoint"
+        type: http
+        url: "https://api.yourservice.com/v1/users"  # Replace with your API endpoint
+        method: GET
+        schedule:
+          number: "10"
+          unit: "m"
+        timeout: "15s"
+        enabled: true
+        tags:
+          - "YOUR_SERVICE_NAME"
+          - "api"
+          - "important"
+        private_locations:
+          - "synthetic-monitor-default"
+        headers:
+          Authorization: "Bearer ${API_TOKEN}"
+          Accept: "application/json"
+        expected_status: [200, 201]
+        expected_body_positive:
+          - "users"
+          - "data"
+        alert:
+          status:
+            enabled: true
+
+      # Database Connection Monitor (TCP)
+      - name: "YOUR_SERVICE_NAME Database Connection"
+        type: tcp
+        hosts:
+          - "db.yourservice.com:5432"  # Replace with your database host:port
+        schedule:
+          number: "5"
+          unit: "m"
+        timeout: "10s"
+        enabled: true
+        tags:
+          - "YOUR_SERVICE_NAME"
+          - "database"
+          - "postgresql"  # or mysql, mongodb, etc.
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        
+        # Optional: TCP-specific checks
+        send_string: ""  # String to send to server
+        receive_string: ""  # Expected response string
+        
+        alert:
+          status:
+            enabled: true
+
+      # Server Connectivity Monitor (ICMP)
+      - name: "YOUR_SERVICE_NAME Server Ping"
+        type: icmp
+        hosts:
+          - "server.yourservice.com"  # Replace with your server hostname
+          - "10.0.1.100"  # Or IP address
+        schedule:
+          number: "2"
+          unit: "m"
+        timeout: "5s"
+        wait: "1s"  # Wait time between pings
+        enabled: true
+        tags:
+          - "YOUR_SERVICE_NAME"
+          - "server"
+          - "connectivity"
+          - "infrastructure"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true
+
+---
+# Additional ConfigMap for different environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: YOUR_SERVICE_NAME-staging-monitors
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app: synthetic-monitor
+    type: http
+    service: YOUR_SERVICE_NAME
+    team: YOUR_TEAM_NAME
+    environment: staging
+data:
+  monitors.yaml: |
+    monitors:
+      - name: "YOUR_SERVICE_NAME Staging Health Check"
+        type: http
+        url: "https://staging-api.yourservice.com/health"  # Staging URL
+        method: GET
+        schedule:
+          number: "10"  # Less frequent for staging
+          unit: "m"
+        timeout: "15s"  # Longer timeout for staging
+        enabled: true
+        tags:
+          - "YOUR_SERVICE_NAME"
+          - "health-check"
+          - "staging"
+        private_locations:
+          - "synthetic-monitor-default"
+        expected_status: [200]
+        expected_body_positive:
+          - "healthy"
+        alert:
+          status:
+            enabled: false  # Disable alerts for staging
+
+# CUSTOMIZATION CHECKLIST:
+# 
+# 1. Replace ALL instances of:
+#    - YOUR_SERVICE_NAME with your actual service name
+#    - YOUR_TEAM_NAME with your team name
+#    - URLs with your actual endpoints
+#    - Database hosts with your actual database servers
+#    - Server hostnames with your actual servers
+#
+# 2. Adjust monitoring schedules based on criticality:
+#    - Critical services: 1-5 minutes
+#    - Important services: 5-15 minutes
+#    - Non-critical services: 15-60 minutes
+#
+# 3. Configure authentication:
+#    - Use environment variables for secrets
+#    - Add necessary headers
+#    - Configure API keys or tokens
+#
+# 4. Set appropriate timeouts:
+#    - Fast APIs: 5-10 seconds
+#    - Slow APIs: 15-30 seconds
+#    - Database connections: 5-15 seconds
+#
+# 5. Configure alerts:
+#    - Enable for production critical services
+#    - Disable or reduce for staging/development
+#    - Enable TLS monitoring for HTTPS endpoints
+#
+# 6. Add relevant tags:
+#    - Service name
+#    - Component type (api, database, cache, etc.)
+#    - Criticality level (critical, important, monitoring)
+#    - Team ownership
+#    - Environment (production, staging, development)

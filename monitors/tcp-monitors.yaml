@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tcp-monitors-config
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app: synthetic-monitor
+    type: tcp
+data:
+  tcp-monitors.yaml: |
+    monitors:
+      - name: "Database Connection Check"
+        type: tcp
+        hosts:
+          - "db.example.com:5432"
+        schedule:
+          number: "5"
+          unit: "m"
+        timeout: "10s"
+        enabled: true
+        tags:
+          - "database"
+          - "postgresql"
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        send_string: ""
+        receive_string: ""
+        alert:
+          status:
+            enabled: true
+
+      - name: "Redis Cache Check"
+        type: tcp
+        hosts:
+          - "redis.example.com:6379"
+        schedule:
+          number: "3"
+          unit: "m"
+        timeout: "5s"
+        enabled: true
+        tags:
+          - "cache"
+          - "redis"
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        send_string: "PING\r\n"
+        receive_string: "PONG"
+        alert:
+          status:
+            enabled: true
+
+      - name: "SMTP Server Check"
+        type: tcp
+        hosts:
+          - "smtp.example.com:587"
+        schedule:
+          number: "10"
+          unit: "m"
+        timeout: "15s"
+        enabled: true
+        tags:
+          - "email"
+          - "smtp"
+          - "infrastructure"
+        private_locations:
+          - "synthetic-monitor-default"
+        send_string: "EHLO synthetic-monitor\r\n"
+        receive_string: "250"
+        alert:
+          status:
+            enabled: true
+
+      - name: "SSH Server Check"
+        type: tcp
+        hosts:
+          - "server.example.com:22"
+        schedule:
+          number: "15"
+          unit: "m"
+        timeout: "10s"
+        enabled: true
+        tags:
+          - "ssh"
+          - "server"
+          - "infrastructure"
+        private_locations:
+          - "synthetic-monitor-default"
+        send_string: ""
+        receive_string: "SSH"
+        alert:
+          status:
+            enabled: true
+
+      - name: "Load Balancer Health"
+        type: tcp
+        hosts:
+          - "lb.example.com:80"
+          - "lb.example.com:443"
+        schedule:
+          number: "2"
+          unit: "m"
+        timeout: "5s"
+        enabled: true
+        tags:
+          - "load-balancer"
+          - "infrastructure"
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true

@@ -1,0 +1,206 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        npm install
+        pip install -r requirements.txt
+
+    - name: Validate TypeScript journeys
+      run: |
+        npx tsc --noEmit
+        npx @elastic/synthetics --dry-run
+
+    - name: Lint YAML files
+      run: |
+        yamllint manifests/ ansible/ monitors/
+
+    - name: Validate Kubernetes manifests
+      run: |
+        # Install kubeval
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo mv kubeval /usr/local/bin
+        
+        # Validate manifests
+        find manifests/ -name "*.yaml" -o -name "*.yml" | xargs kubeval
+
+    - name: Test Python sync script
+      run: |
+        python -m pytest scripts/tests/ -v
+        python -m flake8 scripts/sync-monitors.py
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Scan for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure kubectl
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
+
+    - name: Deploy to staging
+      run: |
+        # Apply staging-specific configurations
+        kubectl apply -f manifests/environments/staging/
+        
+        # Wait for deployment to be ready
+        kubectl rollout status deployment/kibana-sync-service -n elastic-synthetic-staging --timeout=300s
+
+    - name: Run smoke tests
+      run: |
+        # Run basic smoke tests against staging environment
+        npm run test:smoke -- --env=staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Ansible
+      run: |
+        pip install ansible ansible-core
+        ansible-galaxy collection install kubernetes.core
+
+    - name: Configure SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.CONTROL_PLANE_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy ArgoCD Application
+      run: |
+        cd ansible
+        ansible-playbook -i inventory.ini deploy-argocd.yaml \
+          -e git_repo=${{ github.server_url }}/${{ github.repository }}.git \
+          -e git_branch=${{ github.ref_name }}
+
+    - name: Deploy Synthetic Monitoring Infrastructure
+      run: |
+        cd ansible
+        ansible-playbook -i inventory.ini deploy-synthetic-monitors.yaml \
+          -e elasticsearch_password="${{ secrets.ELASTICSEARCH_PASSWORD }}" \
+          -e kibana_api_key="${{ secrets.KIBANA_API_KEY }}"
+
+    - name: Verify deployment
+      run: |
+        # Wait for ArgoCD to sync the application
+        sleep 60
+        
+        # Check application health
+        kubectl get applications -n argocd elastic-synthetic-monitoring -o jsonpath='{.status.health.status}'
+
+    - name: Push synthetic monitors
+      run: |
+        # Push journeys to Kibana
+        export KIBANA_URL="${{ secrets.KIBANA_URL }}"
+        export KIBANA_API_KEY="${{ secrets.KIBANA_API_KEY }}"
+        npm run push:journeys
+
+  notify:
+    name: Notify Teams
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    steps:
+    - name: Notify Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#devops'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+    - name: Create GitHub Release
+      if: github.ref == 'refs/heads/main' && needs.deploy-production.result == 'success'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body: |
+          ## Changes in this Release
+          - Automated deployment of synthetic monitoring infrastructure
+          - Updated monitor configurations
+          - See commit history for detailed changes
+        draft: false
+        prerelease: false

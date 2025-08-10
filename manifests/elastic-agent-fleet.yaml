@@ -1,0 +1,383 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: elastic-agent-synthetics
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app.kubernetes.io/name: elastic-agent-synthetics
+    app.kubernetes.io/component: monitoring-agent
+    app.kubernetes.io/version: "8.11.0"
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elastic-agent-synthetics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: elastic-agent-synthetics
+        app.kubernetes.io/component: monitoring-agent
+      annotations:
+        co.elastic.logs/enabled: "true"
+        co.elastic.logs/json.keys_under_root: "true"
+        co.elastic.logs/json.add_error_key: "true"
+        co.elastic.logs/json.message_key: "message"
+    spec:
+      serviceAccountName: elastic-agent
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      securityContext:
+        runAsUser: 0
+        fsGroup: 0
+      initContainers:
+      - name: wait-for-fleet
+        image: curlimages/curl:8.4.0
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Fleet server to be available..."
+          until curl -k -s "${FLEET_URL}/api/status" > /dev/null; do
+            echo "Fleet server not ready, waiting..."
+            sleep 10
+          done
+          echo "Fleet server is ready!"
+        env:
+        - name: FLEET_URL
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: fleet-url
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+      containers:
+      - name: elastic-agent
+        image: docker.elastic.co/beats/elastic-agent:8.11.0
+        args:
+          - -e
+          - -c
+          - /etc/elastic-agent/elastic-agent.yml
+        env:
+        # Fleet enrollment configuration
+        - name: FLEET_URL
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: fleet-url
+        - name: FLEET_ENROLLMENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: fleet-enrollment-token
+        - name: FLEET_ENROLL
+          value: "1"
+        - name: FLEET_INSECURE
+          value: "true"  # Set to false in production with proper TLS
+        
+        # Elasticsearch configuration (fallback)
+        - name: ELASTICSEARCH_URL
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: elasticsearch-url
+        - name: ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: elasticsearch-username
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: elasticsearch-password
+        
+        # Kibana configuration
+        - name: KIBANA_URL
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: kibana-url
+        
+        # Node and pod information
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        
+        # Agent configuration
+        - name: ELASTIC_AGENT_LOG_LEVEL
+          value: "info"
+        
+        securityContext:
+          runAsUser: 0
+          capabilities:
+            add:
+              - NET_RAW
+              - NET_ADMIN
+              - SYS_ADMIN
+              - DAC_OVERRIDE
+        resources:
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+          requests:
+            memory: 1Gi
+            cpu: 500m
+        volumeMounts:
+        - name: config
+          mountPath: /etc/elastic-agent
+          readOnly: true
+        - name: data
+          mountPath: /usr/share/elastic-agent/data
+        - name: proc
+          mountPath: /hostfs/proc
+          readOnly: true
+        - name: cgroup
+          mountPath: /hostfs/sys/fs/cgroup
+          readOnly: true
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: etc-full
+          mountPath: /hostfs/etc
+          readOnly: true
+        - name: var-lib
+          mountPath: /hostfs/var/lib
+          readOnly: true
+        - name: sys
+          mountPath: /hostfs/sys
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - |
+              #!/bin/bash
+              # Check if elastic-agent process is running and healthy
+              if pgrep -f "elastic-agent" > /dev/null; then
+                # Check if agent is enrolled and healthy
+                if [ -f /usr/share/elastic-agent/data/elastic-agent.pid ]; then
+                  # Additional health check - verify agent can communicate with Fleet
+                  if curl -k -s --max-time 5 "${FLEET_URL}/api/status" > /dev/null 2>&1; then
+                    exit 0
+                  fi
+                fi
+              fi
+              exit 1
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - |
+              #!/bin/bash
+              # Check if elastic-agent is ready and enrolled
+              if [ -f /usr/share/elastic-agent/data/elastic-agent.pid ]; then
+                # Check if agent state file exists (indicates successful enrollment)
+                if [ -f /usr/share/elastic-agent/data/elastic-agent-*/state.yml ]; then
+                  exit 0
+                fi
+              fi
+              exit 1
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 5
+      volumes:
+      - name: config
+        configMap:
+          name: elastic-agent-fleet-config
+          defaultMode: 0600
+      - name: data
+        hostPath:
+          path: /var/lib/elastic-agent-data
+          type: DirectoryOrCreate
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: cgroup
+        hostPath:
+          path: /sys/fs/cgroup
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: etc-full
+        hostPath:
+          path: /etc
+      - name: var-lib
+        hostPath:
+          path: /var/lib
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: tmp
+        emptyDir: {}
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+      - operator: Exists
+        effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastic-agent-fleet-config
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app.kubernetes.io/name: elastic-agent-fleet-config
+    app.kubernetes.io/component: configuration
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+data:
+  elastic-agent.yml: |
+    # Elastic Agent configuration for Fleet enrollment
+    
+    # Fleet configuration
+    fleet:
+      enabled: true
+      access_api_key: ${FLEET_ENROLLMENT_TOKEN}
+      hosts: ["${FLEET_URL}"]
+      ssl:
+        verification_mode: none  # Set to 'certificate' in production
+      timeout: 30s
+      
+    # Agent configuration
+    agent:
+      id: ${POD_NAME}-${NODE_NAME}
+      monitoring:
+        enabled: true
+        use_output: default
+        logs: true
+        metrics: true
+        http:
+          enabled: true
+          host: 0.0.0.0
+          port: 6791
+      
+    # Logging configuration
+    logging:
+      level: ${ELASTIC_AGENT_LOG_LEVEL:info}
+      to_files: true
+      files:
+        path: /var/log/elastic-agent
+        name: elastic-agent
+        keepfiles: 7
+        permissions: 0644
+        rotateeverybytes: 100MB
+      selectors:
+        - "fleet"
+        - "synthetics"
+        - "monitoring"
+    
+    # Output configuration (fallback if Fleet is not available)
+    outputs:
+      default:
+        type: elasticsearch
+        hosts:
+          - "${ELASTICSEARCH_URL}"
+        username: "${ELASTICSEARCH_USERNAME}"
+        password: "${ELASTICSEARCH_PASSWORD}"
+        ssl:
+          verification_mode: none  # Set to 'certificate' in production
+    
+    # Provider configuration for Kubernetes metadata
+    providers:
+      kubernetes:
+        enabled: true
+        host: ${HOST_IP}
+        scope: node
+        add_metadata: true
+        
+    # Inputs configuration (will be managed by Fleet)
+    inputs: []
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elastic-agent-synthetics
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app.kubernetes.io/name: elastic-agent-synthetics
+    app.kubernetes.io/component: monitoring-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service
+  ports:
+  - name: monitoring
+    port: 6791
+    targetPort: 6791
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: elastic-agent-synthetics
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: elastic-agent-synthetics
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app.kubernetes.io/name: elastic-agent-synthetics
+    app.kubernetes.io/component: monitoring-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elastic-agent-synthetics
+  endpoints:
+  - port: monitoring
+    interval: 30s
+    path: /stats
+    scheme: http

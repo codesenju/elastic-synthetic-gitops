@@ -1,0 +1,131 @@
+---
+- name: Deploy ArgoCD Application for Synthetic Monitoring
+  hosts: control-plane[0]
+  become: yes
+  vars:
+    argocd_namespace: argocd
+    app_namespace: elastic-synthetic-monitoring
+    git_repo: https://github.com/your-org/elastic-synthetic-gitops.git
+    git_branch: main
+    
+  tasks:
+    - name: Ensure ArgoCD namespace exists
+      kubernetes.core.k8s:
+        name: "{{ argocd_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create ArgoCD Application for Synthetic Monitoring
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: elastic-synthetic-monitoring
+            namespace: "{{ argocd_namespace }}"
+            labels:
+              app.kubernetes.io/name: elastic-synthetic-monitoring
+              app.kubernetes.io/component: monitoring
+          spec:
+            project: default
+            source:
+              repoURL: "{{ git_repo }}"
+              targetRevision: "{{ git_branch }}"
+              path: manifests
+              directory:
+                recurse: true
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ app_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+                - PrunePropagationPolicy=foreground
+                - PruneLast=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+            revisionHistoryLimit: 10
+        state: present
+
+    - name: Create ArgoCD ApplicationSet for Multiple Environments
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: ApplicationSet
+          metadata:
+            name: elastic-synthetic-monitoring-environments
+            namespace: "{{ argocd_namespace }}"
+          spec:
+            generators:
+            - list:
+                elements:
+                - env: development
+                  namespace: elastic-synthetic-dev
+                  schedule: "*/15 * * * *"
+                - env: staging
+                  namespace: elastic-synthetic-staging
+                  schedule: "*/10 * * * *"
+                - env: production
+                  namespace: elastic-synthetic-prod
+                  schedule: "*/5 * * * *"
+            template:
+              metadata:
+                name: "elastic-synthetic-{{env}}"
+                labels:
+                  environment: "{{env}}"
+              spec:
+                project: default
+                source:
+                  repoURL: "{{ git_repo }}"
+                  targetRevision: "{{ git_branch }}"
+                  path: manifests/environments/{{env}}
+                  directory:
+                    recurse: true
+                destination:
+                  server: https://kubernetes.default.svc
+                  namespace: "{{namespace}}"
+                syncPolicy:
+                  automated:
+                    prune: true
+                    selfHeal: true
+                  syncOptions:
+                    - CreateNamespace=true
+                    - PrunePropagationPolicy=foreground
+        state: present
+
+    - name: Wait for ArgoCD Application to be healthy
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: elastic-synthetic-monitoring
+        namespace: "{{ argocd_namespace }}"
+        wait: true
+        wait_condition:
+          type: Healthy
+          status: "True"
+        wait_timeout: 300
+
+    - name: Display ArgoCD Application status
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: elastic-synthetic-monitoring
+        namespace: "{{ argocd_namespace }}"
+      register: app_status
+
+    - name: Show application sync status
+      debug:
+        msg: |
+          Application: {{ app_status.resources[0].metadata.name }}
+          Sync Status: {{ app_status.resources[0].status.sync.status }}
+          Health Status: {{ app_status.resources[0].status.health.status }}
+          Revision: {{ app_status.resources[0].status.sync.revision }}

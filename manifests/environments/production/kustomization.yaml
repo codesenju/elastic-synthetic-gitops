@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: elastic-synthetic-prod
+
+resources:
+- ../../namespace.yaml
+- ../../secrets.yaml
+- ../../elastic-agent.yaml
+- ../../kibana-sync-service.yaml
+- ../../../monitors/http-monitors.yaml
+- ../../../monitors/tcp-monitors.yaml
+- ../../../monitors/icmp-monitors.yaml
+
+patchesStrategicMerge:
+- namespace-patch.yaml
+- elastic-agent-patch.yaml
+- sync-service-patch.yaml
+
+configMapGenerator:
+- name: elastic-agent-config
+  files:
+  - elastic-agent.yml=elastic-agent-prod.yml
+
+secretGenerator:
+- name: elasticsearch-credentials
+  literals:
+  - elasticsearch-password=REPLACE_WITH_ACTUAL_PASSWORD
+  - kibana-api-key=REPLACE_WITH_ACTUAL_API_KEY
+  - elasticsearch-username=elastic
+  - elasticsearch-url=https://elasticsearch.example.com:9200
+  - kibana-url=https://kibana.example.com
+
+images:
+- name: docker.elastic.co/beats/elastic-agent
+  newTag: "8.11.0"
+
+replicas:
+- name: kibana-sync-service
+  count: 2
+
+commonLabels:
+  environment: production
+  tier: prod
+
+commonAnnotations:
+  environment: production
+  managed-by: argocd

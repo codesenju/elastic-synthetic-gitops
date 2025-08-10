@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: icmp-monitors-config
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app: synthetic-monitor
+    type: icmp
+data:
+  icmp-monitors.yaml: |
+    monitors:
+      - name: "Primary Server Ping"
+        type: icmp
+        hosts:
+          - "server1.example.com"
+          - "server2.example.com"
+        schedule:
+          number: "1"
+          unit: "m"
+        timeout: "10s"
+        wait: "1s"
+        enabled: true
+        tags:
+          - "ping"
+          - "server"
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true
+
+      - name: "Network Gateway Check"
+        type: icmp
+        hosts:
+          - "gateway.example.com"
+          - "192.168.1.1"
+        schedule:
+          number: "2"
+          unit: "m"
+        timeout: "5s"
+        wait: "1s"
+        enabled: true
+        tags:
+          - "network"
+          - "gateway"
+          - "infrastructure"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true
+
+      - name: "DNS Server Connectivity"
+        type: icmp
+        hosts:
+          - "8.8.8.8"
+          - "1.1.1.1"
+          - "dns.example.com"
+        schedule:
+          number: "5"
+          unit: "m"
+        timeout: "3s"
+        wait: "1s"
+        enabled: true
+        tags:
+          - "dns"
+          - "connectivity"
+          - "infrastructure"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true
+
+      - name: "CDN Edge Servers"
+        type: icmp
+        hosts:
+          - "edge1.cdn.example.com"
+          - "edge2.cdn.example.com"
+          - "edge3.cdn.example.com"
+        schedule:
+          number: "10"
+          unit: "m"
+        timeout: "8s"
+        wait: "1s"
+        enabled: true
+        tags:
+          - "cdn"
+          - "edge"
+          - "performance"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true
+
+      - name: "External Dependencies"
+        type: icmp
+        hosts:
+          - "api.stripe.com"
+          - "api.sendgrid.com"
+          - "hooks.slack.com"
+        schedule:
+          number: "15"
+          unit: "m"
+        timeout: "10s"
+        wait: "2s"
+        enabled: true
+        tags:
+          - "external"
+          - "dependencies"
+          - "third-party"
+        private_locations:
+          - "synthetic-monitor-default"
+        alert:
+          status:
+            enabled: true

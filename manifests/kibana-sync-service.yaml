@@ -1,0 +1,191 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana-sync-service
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app.kubernetes.io/name: kibana-sync-service
+    app.kubernetes.io/component: sync-service
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kibana-sync-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kibana-sync-service
+        app.kubernetes.io/component: sync-service
+      annotations:
+        co.elastic.logs/enabled: "true"
+        co.elastic.logs/json.keys_under_root: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kibana-sync-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+      - name: install-dependencies
+        image: python:3.11-slim
+        command:
+        - sh
+        - -c
+        - |
+          pip install --no-cache-dir -r /app/requirements.txt
+          cp -r /usr/local/lib/python3.11/site-packages/* /shared/site-packages/
+        volumeMounts:
+        - name: sync-script
+          mountPath: /app
+          readOnly: true
+        - name: shared-packages
+          mountPath: /shared/site-packages
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: sync-service
+        image: python:3.11-slim
+        command:
+        - sh
+        - -c
+        - |
+          export PYTHONPATH="/shared/site-packages:$PYTHONPATH"
+          python /app/sync-monitors.py
+        env:
+        - name: KIBANA_URL
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: kibana-url
+        - name: KIBANA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: kibana-api-key
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SYNC_MODE
+          value: "continuous"
+        - name: SYNC_INTERVAL
+          value: "60"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          limits:
+            memory: 512Mi
+            cpu: 500m
+          requests:
+            memory: 256Mi
+            cpu: 100m
+        volumeMounts:
+        - name: sync-script
+          mountPath: /app
+          readOnly: true
+        - name: shared-packages
+          mountPath: /shared/site-packages
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /.cache
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - |
+              import os
+              import time
+              # Check if the process is still running by checking for recent log activity
+              log_file = '/tmp/sync-service.log'
+              if os.path.exists(log_file):
+                  stat = os.stat(log_file)
+                  if time.time() - stat.st_mtime < 300:  # 5 minutes
+                      exit(0)
+              exit(1)
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - |
+              # Simple readiness check - verify Python can import required modules
+              try:
+                  import requests
+                  import yaml
+                  import kubernetes
+                  exit(0)
+              except ImportError:
+                  exit(1)
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: sync-script
+        configMap:
+          name: kibana-sync-script
+          defaultMode: 0755
+      - name: shared-packages
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana-sync-service
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app.kubernetes.io/name: kibana-sync-service
+    app.kubernetes.io/component: sync-service
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: kibana-sync-service

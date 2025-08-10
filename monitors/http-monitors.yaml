@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: http-monitors-config
+  namespace: elastic-synthetic-monitoring
+  labels:
+    app: synthetic-monitor
+    type: http
+data:
+  http-monitors.yaml: |
+    monitors:
+      - name: "Website Health Check"
+        type: http
+        url: "https://example.com"
+        method: GET
+        schedule:
+          number: "5"
+          unit: "m"
+        timeout: "16s"
+        enabled: true
+        tags:
+          - "website"
+          - "health-check"
+          - "production"
+        private_locations:
+          - "synthetic-monitor-default"
+        expected_status: [200]
+        expected_headers:
+          content-type: "text/html"
+        expected_body_positive:
+          - "Welcome"
+        alert:
+          status:
+            enabled: true
+          tls:
+            enabled: true
+
+      - name: "API Endpoint Monitor"
+        type: http
+        url: "https://api.example.com/health"
+        method: GET
+        schedule:
+          number: "2"
+          unit: "m"
+        timeout: "10s"
+        enabled: true
+        tags:
+          - "api"
+          - "health-check"
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        headers:
+          Authorization: "Bearer ${API_TOKEN}"
+          Content-Type: "application/json"
+        expected_status: [200]
+        expected_body_positive:
+          - '"status":"healthy"'
+        alert:
+          status:
+            enabled: true
+
+      - name: "Authentication Endpoint"
+        type: http
+        url: "https://auth.example.com/login"
+        method: POST
+        schedule:
+          number: "10"
+          unit: "m"
+        timeout: "20s"
+        enabled: true
+        tags:
+          - "auth"
+          - "login"
+          - "critical"
+        private_locations:
+          - "synthetic-monitor-default"
+        headers:
+          Content-Type: "application/json"
+        body: |
+          {
+            "username": "test@example.com",
+            "password": "testpassword"
+          }
+        expected_status: [200, 201]
+        expected_body_positive:
+          - "token"
+          - "success"
+        alert:
+          status:
+            enabled: true
+
+      - name: "CDN Performance Check"
+        type: http
+        url: "https://cdn.example.com/assets/main.css"
+        method: GET
+        schedule:
+          number: "15"
+          unit: "m"
+        timeout: "5s"
+        enabled: true
+        tags:
+          - "cdn"
+          - "performance"
+          - "assets"
+        private_locations:
+          - "synthetic-monitor-default"
+        expected_status: [200]
+        expected_headers:
+          cache-control: "max-age"
+        alert:
+          status:
+            enabled: true

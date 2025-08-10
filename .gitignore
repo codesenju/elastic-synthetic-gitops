@@ -1,0 +1,488 @@
+# Elastic Synthetic GitOps - .gitignore
+
+# ===========================
+# Node.js / npm
+# ===========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage
+.grunt
+
+# Bower dependency directory
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons
+build/Release
+
+# Dependency directories
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# ===========================
+# Ansible
+# ===========================
+# Ansible retry files
+*.retry
+
+# Ansible vault files (be careful with these)
+# vault.yml
+# secrets.yml
+
+# Ansible inventory files with sensitive data
+# inventory.ini (if it contains sensitive info)
+# hosts.ini (if it contains sensitive info)
+
+# Ansible collections cache
+.ansible/
+
+# Ansible Galaxy roles
+roles/*/
+!roles/requirements.yml
+
+# Ansible logs
+ansible.log
+
+# ===========================
+# Kubernetes / Helm
+# ===========================
+# Helm charts
+charts/*/charts/
+charts/*/requirements.lock
+
+# Kubernetes secrets (NEVER commit these)
+*secret*.yaml
+*secrets*.yaml
+*-secret.yaml
+*-secrets.yaml
+
+# Kubeconfig files
+kubeconfig
+.kube/config
+*.kubeconfig
+
+# Helm values files with sensitive data
+values-prod.yaml
+values-production.yaml
+values-staging.yaml
+values-dev.yaml
+values-local.yaml
+
+# ===========================
+# ArgoCD
+# ===========================
+# ArgoCD application files with sensitive data
+# Be careful with these - review before committing
+# argocd-*.yaml
+
+# ===========================
+# Elastic Stack
+# ===========================
+# Elasticsearch data
+elasticsearch/data/
+elasticsearch/logs/
+
+# Kibana data
+kibana/data/
+kibana/logs/
+
+# Elastic Agent data
+elastic-agent/data/
+elastic-agent/logs/
+
+# ===========================
+# Synthetic Monitoring
+# ===========================
+# Journey artifacts
+journeys/screenshots/
+journeys/videos/
+journeys/artifacts/
+
+# Synthetic monitoring data
+synthetic-data/
+monitor-results/
+
+# Journey test results
+journey-results/
+test-results/
+
+# ===========================
+# IDE / Editor
+# ===========================
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===========================
+# OS Generated
+# ===========================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===========================
+# Logs
+# ===========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ===========================
+# Certificates & Keys
+# ===========================
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# ===========================
+# Backup files
+# ===========================
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+*.tmp
+
+# ===========================
+# Environment & Config
+# ===========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Configuration files with sensitive data
+config.json
+config.yaml
+config.yml
+local.json
+local.yaml
+local.yml
+
+# ===========================
+# Project Specific
+# ===========================
+# Ansible inventory with sensitive data
+ansible/inventory.ini
+ansible/group_vars/all/vault.yml
+ansible/host_vars/*/vault.yml
+
+# Terraform (if used)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+
+# Docker
+.dockerignore
+
+# Monitoring data
+monitoring-data/
+metrics/
+traces/
+
+# ===========================
+# CI/CD
+# ===========================
+# GitHub Actions artifacts
+.github/workflows/artifacts/
+
+# Build artifacts
+build/
+dist/
+out/
+
+# Test artifacts
+test-reports/
+coverage-reports/
+
+# ===========================
+# Documentation
+# ===========================
+# Generated documentation
+docs/_build/
+docs/build/
+site/
+
+# ===========================
+# Miscellaneous
+# ===========================
+# Lock files (uncomment if you want to ignore them)
+# package-lock.json
+# yarn.lock
+
+# Debug files
+debug.log
+error.log
+
+# Performance monitoring
+.clinic/

@@ -1,0 +1,41 @@
+{
+  "name": "elastic-synthetic-gitops",
+  "version": "1.0.0",
+  "description": "GitOps-enabled Elastic Synthetic Monitoring with Ansible deployment automation",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "push": "npx @elastic/synthetics push",
+    "push:journeys": "npx @elastic/synthetics push --pattern 'journeys/**/*.journey.ts'",
+    "push:monitors": "python3 scripts/sync-monitors.py",
+    "deploy:argocd": "ansible-playbook ansible/deploy-argocd.yaml",
+    "deploy:monitors": "ansible-playbook ansible/deploy-synthetic-monitors.yaml",
+    "validate:journeys": "npx @elastic/synthetics --dry-run",
+    "validate:manifests": "kubectl apply --dry-run=client -f manifests/",
+    "lint:yaml": "yamllint manifests/ ansible/",
+    "setup": "npm install && pip3 install -r requirements.txt"
+  },
+  "keywords": [
+    "elastic",
+    "synthetics",
+    "monitoring",
+    "gitops",
+    "kubernetes",
+    "ansible",
+    "argocd"
+  ],
+  "author": "DevOps Team",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@elastic/synthetics": "^1.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

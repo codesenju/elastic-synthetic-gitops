@@ -1,0 +1,300 @@
+---
+- name: Deploy Elastic Synthetic Monitoring Infrastructure
+  hosts: control-plane[0]
+  become: yes
+  vars:
+    namespace: elastic-synthetic-monitoring
+    elastic_agent_version: "8.11.0"
+    kibana_url: "https://kibana.example.com"
+    
+  tasks:
+    - name: Create namespace for synthetic monitoring
+      kubernetes.core.k8s:
+        name: "{{ namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+        definition:
+          metadata:
+            labels:
+              name: "{{ namespace }}"
+              monitoring: "synthetic"
+
+    - name: Create ConfigMap for Elastic Agent configuration
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: elastic-agent-config
+            namespace: "{{ namespace }}"
+          data:
+            elastic-agent.yml: |
+              outputs:
+                default:
+                  type: elasticsearch
+                  hosts:
+                    - "https://elasticsearch.example.com:9200"
+                  username: "elastic"
+                  password: "${ELASTICSEARCH_PASSWORD}"
+                  ssl:
+                    verification_mode: none
+              
+              inputs:
+                - type: synthetics/http
+                  id: http-monitors
+                  use_output: default
+                  streams:
+                    - data_stream:
+                        dataset: http
+                        type: synthetics
+                      schedule: "@every 60s"
+                      timeout: 16s
+                      
+                - type: synthetics/tcp
+                  id: tcp-monitors  
+                  use_output: default
+                  streams:
+                    - data_stream:
+                        dataset: tcp
+                        type: synthetics
+                      schedule: "@every 60s"
+                      timeout: 16s
+                      
+                - type: synthetics/icmp
+                  id: icmp-monitors
+                  use_output: default
+                  streams:
+                    - data_stream:
+                        dataset: icmp
+                        type: synthetics
+                      schedule: "@every 60s"
+                      timeout: 16s
+        state: present
+
+    - name: Create Secret for Elasticsearch credentials
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: elasticsearch-credentials
+            namespace: "{{ namespace }}"
+          type: Opaque
+          stringData:
+            password: "{{ elasticsearch_password | default('changeme') }}"
+            kibana-api-key: "{{ kibana_api_key | default('') }}"
+        state: present
+
+    - name: Deploy Elastic Agent DaemonSet
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: elastic-agent-synthetics
+            namespace: "{{ namespace }}"
+            labels:
+              app: elastic-agent-synthetics
+          spec:
+            selector:
+              matchLabels:
+                app: elastic-agent-synthetics
+            template:
+              metadata:
+                labels:
+                  app: elastic-agent-synthetics
+              spec:
+                serviceAccountName: elastic-agent
+                hostNetwork: true
+                dnsPolicy: ClusterFirstWithHostNet
+                containers:
+                - name: elastic-agent
+                  image: "docker.elastic.co/beats/elastic-agent:{{ elastic_agent_version }}"
+                  args:
+                    - -e
+                    - -c
+                    - /etc/elastic-agent/elastic-agent.yml
+                  env:
+                  - name: ELASTICSEARCH_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: elasticsearch-credentials
+                        key: password
+                  - name: NODE_NAME
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: spec.nodeName
+                  securityContext:
+                    runAsUser: 0
+                    capabilities:
+                      add:
+                        - NET_RAW
+                  resources:
+                    limits:
+                      memory: 500Mi
+                      cpu: 500m
+                    requests:
+                      memory: 200Mi
+                      cpu: 100m
+                  volumeMounts:
+                  - name: config
+                    mountPath: /etc/elastic-agent
+                    readOnly: true
+                  - name: monitors-config
+                    mountPath: /etc/synthetics/monitors
+                    readOnly: true
+                volumes:
+                - name: config
+                  configMap:
+                    name: elastic-agent-config
+                - name: monitors-config
+                  configMap:
+                    name: synthetic-monitors-config
+                    optional: true
+        state: present
+
+    - name: Create ServiceAccount for Elastic Agent
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: elastic-agent
+            namespace: "{{ namespace }}"
+        state: present
+
+    - name: Create ClusterRole for Elastic Agent
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: elastic-agent-synthetics
+          rules:
+          - apiGroups: [""]
+            resources:
+            - nodes
+            - namespaces
+            - events
+            - pods
+            - services
+            - configmaps
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["extensions"]
+            resources:
+            - replicasets
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["apps"]
+            resources:
+            - statefulsets
+            - deployments
+            - replicasets
+            verbs: ["get", "list", "watch"]
+        state: present
+
+    - name: Create ClusterRoleBinding for Elastic Agent
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: elastic-agent-synthetics
+          subjects:
+          - kind: ServiceAccount
+            name: elastic-agent
+            namespace: "{{ namespace }}"
+          roleRef:
+            kind: ClusterRole
+            name: elastic-agent-synthetics
+            apiGroup: rbac.authorization.k8s.io
+        state: present
+
+    - name: Deploy Kibana Sync Service for Browser Monitors
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: kibana-sync-service
+            namespace: "{{ namespace }}"
+            labels:
+              app: kibana-sync-service
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: kibana-sync-service
+            template:
+              metadata:
+                labels:
+                  app: kibana-sync-service
+              spec:
+                containers:
+                - name: sync-service
+                  image: python:3.11-slim
+                  command: ["/bin/sh"]
+                  args:
+                    - -c
+                    - |
+                      pip install requests pyyaml kubernetes
+                      python /app/sync-monitors.py
+                  env:
+                  - name: KIBANA_URL
+                    value: "{{ kibana_url }}"
+                  - name: KIBANA_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: elasticsearch-credentials
+                        key: kibana-api-key
+                  - name: NAMESPACE
+                    value: "{{ namespace }}"
+                  volumeMounts:
+                  - name: sync-script
+                    mountPath: /app
+                  - name: journey-configs
+                    mountPath: /etc/journeys
+                    readOnly: true
+                  resources:
+                    limits:
+                      memory: 256Mi
+                      cpu: 200m
+                    requests:
+                      memory: 128Mi
+                      cpu: 100m
+                volumes:
+                - name: sync-script
+                  configMap:
+                    name: kibana-sync-script
+                - name: journey-configs
+                  configMap:
+                    name: journey-configs
+                    optional: true
+        state: present
+
+    - name: Wait for Elastic Agent DaemonSet to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: DaemonSet
+        name: elastic-agent-synthetics
+        namespace: "{{ namespace }}"
+        wait: true
+        wait_condition:
+          type: Ready
+        wait_timeout: 300
+
+    - name: Display deployment status
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: DaemonSet
+        name: elastic-agent-synthetics
+        namespace: "{{ namespace }}"
+      register: daemonset_status
+
+    - name: Show DaemonSet status
+      debug:
+        msg: |
+          DaemonSet: {{ daemonset_status.resources[0].metadata.name }}
+          Desired: {{ daemonset_status.resources[0].status.desiredNumberScheduled }}
+          Ready: {{ daemonset_status.resources[0].status.numberReady }}
+          Available: {{ daemonset_status.resources[0].status.numberAvailable }}
